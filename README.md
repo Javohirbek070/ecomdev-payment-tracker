@@ -18,14 +18,15 @@ A production-grade, architectural technical assessment solution for tracking stu
   - Excludes students who paid in full (`total_paid == monthly_fee`) or overpaid (`total_paid > monthly_fee`).
   - Includes non-paying students with `total_paid: 0.00` and `debt: monthly_fee`.
   - Rejects invalid month strings with **HTTP 422 Unprocessable Content**.
-- **Telegram Bot (`aiogram 3.x` + `HTTPX`)**: Decoupled administrative bot communicating with the running FastAPI service over HTTP:
+- **Telegram Bot (`aiogram 3.x` + `HTTPX`)**: Decoupled administrative bot communicating with the running FastAPI service:
+  - Supports both **Local Long-Polling** and **Vercel Serverless Webhooks** (`POST /webhook/telegram`).
   - `/start`: Welcome guide and command instructions.
   - `/debt`: Summarizes debtors for the current calendar month with remaining debts.
   - `/pay <student_id> <amount>`: Records a tuition payment dated today (`date.today()`) via the REST API.
-  - **Role-Based Access Control (RBAC)**: Restricts financial commands (`/pay`) to whitelisted Telegram user IDs (`TELEGRAM_ADMIN_IDS`).
+  - **Dual Role-Based Access Control (RBAC)**: Authorizes financial commands (`/pay`) via numeric Telegram User IDs (`TELEGRAM_ADMIN_IDS`) or Telegram usernames (`TELEGRAM_ADMIN_USERNAMES`, e.g. `@code_debugger007`, `@The_javohirbek`).
   - Safe error handling without leaking traceback traces to chat users.
 - **Health Check**: `GET /health` and `GET /` endpoints for uptime monitoring and deployment health checks.
-- **Automated Testing Suite**: 26 automated unit and integration tests executed against an isolated in-memory SQLite database (`StaticPool`), guaranteeing 0 side effects on production data.
+- **Automated Testing Suite**: 27 automated unit and integration tests executed against an isolated in-memory SQLite database (`StaticPool`), guaranteeing 0 side effects on production data.
 
 ---
 
@@ -330,7 +331,7 @@ pytest -v
 | :--- | :--- | :--- | :--- |
 | `/start` | None | Public | Welcome message and command instructions. |
 | `/debt` | None | Public | Queries FastAPI `GET /debtors?month=YYYY-MM` and displays current month debtors. |
-| `/pay` | `<student_id> <amount>` | Admins Only (`TELEGRAM_ADMIN_IDS`) | Records payment via FastAPI `POST /payments` dated today (`date.today()`). |
+| `/pay` | `<student_id> <amount>` | Admins Only (`TELEGRAM_ADMIN_IDS` / `TELEGRAM_ADMIN_USERNAMES`) | Records payment via FastAPI `POST /payments` dated today (`date.today()`). Whitelisted for `@code_debugger007` and `@The_javohirbek`. |
 
 ---
 
