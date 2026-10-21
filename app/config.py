@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     @field_validator("telegram_admin_ids", mode="before")
     @classmethod
     def parse_admin_ids(cls, v: Any) -> list[int]:
+        if isinstance(v, int):
+            return [v]
         if isinstance(v, str):
             v = v.strip()
             if not v:

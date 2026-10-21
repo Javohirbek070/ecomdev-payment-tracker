@@ -48,7 +48,7 @@ async def handle_start(message: types.Message):
     await message.answer(welcome_text, parse_mode=ParseMode.HTML)
 
 
-@dp.message(Command("debt"))
+@dp.message(Command("debt", "debd"))
 async def handle_debt(message: types.Message, client: Optional[httpx.AsyncClient] = None):
     """
     Show debtors for the current month by querying the FastAPI service over HTTP.
@@ -212,7 +212,20 @@ async def handle_pay(message: types.Message, client: Optional[httpx.AsyncClient]
         )
 
 
-async def main():
+@dp.message()
+async def handle_fallback(message: types.Message):
+    """Handle any unrecognized messages or commands."""
+    await message.answer(
+        "❓ <b>Noma'lum buyruq / Unknown command.</b>\n\n"
+        "Mavjud buyruqlar / Available commands:\n"
+        "• <b>/start</b> — Qo'llanma / Help\n"
+        "• <b>/debt</b> — Joriy oy qarzdorlari / View debtors\n"
+        "• <b>/pay &lt;student_id&gt; &lt;amount&gt;</b> — To'lov kiritish / Record payment",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def start_bot():
     token = settings.telegram_bot_token
 
     if not token or token.startswith("your-") or "ABCdefGHI" in token or len(token.strip()) < 10:
@@ -232,6 +245,10 @@ async def main():
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
+
+
+async def main():
+    await start_bot()
 
 
 if __name__ == "__main__":
