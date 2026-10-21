@@ -21,15 +21,38 @@ logger = logging.getLogger("telegram_bot")
 dp = Dispatcher()
 
 
-def is_user_authorized(user_id: Optional[int]) -> bool:
+def is_user_authorized(user_id: Optional[int], username: Optional[str] = None) -> bool:
     """
     Check if the user is authorized to perform financial actions.
-    If TELEGRAM_ADMIN_IDS is configured, only users in that list are allowed.
+    Authorizes if either:
+    1. The user's numeric Telegram User ID is in settings.telegram_admin_ids.
+    2. The user's Telegram username (e.g. @code_debugger007) is in settings.telegram_admin_usernames.
     """
-    if user_id is None or not settings.telegram_admin_ids:
-        # If no admin IDs are configured, restrict financial operations by default for security
-        return False
-    return user_id in settings.telegram_admin_ids
+    if user_id and settings.telegram_admin_ids and user_id in settings.telegram_admin_ids:
+        return True
+    if username and isinstance(username, str) and settings.telegram_admin_usernames:
+        clean_user = username.strip().lstrip("@").lower()
+        if clean_user in settings.telegram_admin_usernames:
+            return True
+    return False
+
+
+def get_default_client() -> httpx.AsyncClient:
+    """
+    Returns an HTTPX AsyncClient.
+    If running within FastAPI (e.g. on Vercel via serverless webhook),
+    uses in-memory ASGITransport to eliminate network latency.
+    Otherwise connects via HTTP to settings.api_base_url.
+    """
+    try:
+        from app.main import app
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://app",
+            timeout=15.0,
+        )
+    except Exception:
+        return httpx.AsyncClient(base_url=settings.api_base_url, timeout=15.0)
 
 
 @dp.message(Command("start"))
@@ -54,17 +77,17 @@ async def handle_debt(message: types.Message, client: Optional[httpx.AsyncClient
     Show debtors for the current month by querying the FastAPI service over HTTP.
     """
     current_month = datetime.date.today().strftime("%Y-%m")
-    url = f"{settings.api_base_url}/debtors?month={current_month}"
+    path = f"/debtors?month={current_month}"
 
     async def _fetch(http_cli: httpx.AsyncClient):
-        response = await http_cli.get(url)
-        return response
+        target = path if str(http_cli.base_url) != "http://" else f"{settings.api_base_url}{path}"
+        return await http_cli.get(target)
 
     try:
         if client:
             resp = await _fetch(client)
         else:
-            async with httpx.AsyncClient(timeout=10.0) as http_cli:
+            async with get_default_client() as http_cli:
                 resp = await _fetch(http_cli)
 
         if resp.status_code != 200:
@@ -114,13 +137,15 @@ async def handle_pay(message: types.Message, client: Optional[httpx.AsyncClient]
     Restricted to authorized administrator user IDs.
     """
     user_id = message.from_user.id if message.from_user else None
+    username = message.from_user.username if message.from_user else None
 
     # Security check: Restrict financial operations
-    if not is_user_authorized(user_id):
+    if not is_user_authorized(user_id, username):
         await message.answer(
             f"⛔ <b>Access Denied:</b> You are not authorized to perform financial operations.\n"
             f"Your Telegram User ID is: <code>{user_id}</code>\n"
-            "Please add your User ID to <code>TELEGRAM_ADMIN_IDS</code> in <code>.env</code> to grant access.",
+            f"Your Username is: <code>@{username or 'N/A'}</code>\n"
+            "Please ask an administrator to whitelist your User ID or Username in <code>.env</code>.",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -162,17 +187,17 @@ async def handle_pay(message: types.Message, client: Optional[httpx.AsyncClient]
         "payment_date": today_str,
     }
 
-    url = f"{settings.api_base_url}/payments"
+    path = "/payments"
 
     async def _post(http_cli: httpx.AsyncClient):
-        response = await http_cli.post(url, json=payload)
-        return response
+        target = path if str(http_cli.base_url) != "http://" else f"{settings.api_base_url}{path}"
+        return await http_cli.post(target, json=payload)
 
     try:
         if client:
             resp = await _post(client)
         else:
-            async with httpx.AsyncClient(timeout=10.0) as http_cli:
+            async with get_default_client() as http_cli:
                 resp = await _post(http_cli)
 
         if resp.status_code == 201:

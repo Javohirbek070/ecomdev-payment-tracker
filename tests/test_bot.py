@@ -7,19 +7,31 @@ from unittest.mock import AsyncMock, patch
 from bot.main import handle_start, handle_debt, handle_pay, is_user_authorized
 from app.config import settings
 from app.main import app
+from aiogram import Bot
 
 
 @pytest.mark.asyncio
 async def test_bot_authorization():
-    """Verify authorization logic for admin user IDs."""
-    with patch.object(settings, "telegram_admin_ids", [12345, 67890]):
+    """Verify authorization logic for admin user IDs and usernames."""
+    with patch.object(settings, "telegram_admin_ids", [12345, 67890]), \
+         patch.object(settings, "telegram_admin_usernames", ["code_debugger007", "the_javohirbek"]):
+        # Numeric ID check
         assert is_user_authorized(12345) is True
         assert is_user_authorized(67890) is True
         assert is_user_authorized(99999) is False
         assert is_user_authorized(None) is False
 
-    with patch.object(settings, "telegram_admin_ids", []):
+        # Username check
+        assert is_user_authorized(99999, "code_debugger007") is True
+        assert is_user_authorized(99999, "@code_debugger007") is True
+        assert is_user_authorized(99999, "The_javohirbek") is True
+        assert is_user_authorized(99999, "random_stranger") is False
+        assert is_user_authorized(None, "code_debugger007") is True
+
+    with patch.object(settings, "telegram_admin_ids", []), \
+         patch.object(settings, "telegram_admin_usernames", []):
         assert is_user_authorized(12345) is False
+        assert is_user_authorized(99999, "code_debugger007") is False
         assert is_user_authorized(None) is False
 
 
@@ -149,3 +161,24 @@ async def test_bot_handles_network_error():
         msg_pay.text = "/pay 1 100000"
         await handle_pay(msg_pay, client=mock_client)
         assert "Failed to communicate with the payment server" in msg_pay.answer.call_args[0][0]
+
+
+def test_telegram_webhook_endpoint(client):
+    """Verify that POST /webhook/telegram receives and processes updates on Vercel."""
+    with patch.object(Bot, "__call__", new_callable=AsyncMock):
+        res = client.post(
+            "/webhook/telegram",
+            json={
+                "update_id": 123456,
+                "message": {
+                    "message_id": 1,
+                    "date": 1700000000,
+                    "chat": {"id": 12345, "type": "private"},
+                    "from": {"id": 12345, "is_bot": False, "first_name": "Test"},
+                    "text": "/start",
+                },
+            },
+        )
+        assert res.status_code == 200
+        assert res.json() == {"ok": True}
+

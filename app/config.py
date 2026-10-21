@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Telegram bot configuration
     telegram_bot_token: str | None = None
     telegram_admin_ids: list[int] | str = []
+    telegram_admin_usernames: list[str] | str = ["code_debugger007", "The_javohirbek"]
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -50,6 +51,18 @@ class Settings(BaseSettings):
             return ids
         if isinstance(v, (list, tuple, set)):
             return [int(x) for x in v if str(x).strip().isdigit() or isinstance(x, int)]
+        return []
+
+    @field_validator("telegram_admin_usernames", mode="before")
+    @classmethod
+    def parse_admin_usernames(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            return [x.strip().lstrip("@").lower() for x in v.split(",") if x.strip()]
+        if isinstance(v, (list, tuple, set)):
+            return [str(x).strip().lstrip("@").lower() for x in v if str(x).strip()]
         return []
 
 
