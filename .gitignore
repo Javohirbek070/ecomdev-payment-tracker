@@ -64,3 +64,5 @@ coverage.xml
 # Vercel deployment cache
 .vercel/
 
+
+.vercel
