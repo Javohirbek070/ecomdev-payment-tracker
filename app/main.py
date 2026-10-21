@@ -24,6 +24,7 @@ app.include_router(payments.router)
 app.include_router(debtors.router)
 
 
+@app.get("/health", tags=["Health"])
 @app.get("/", tags=["Health"])
 def health_check():
     """Health check endpoint."""

@@ -9,10 +9,11 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     environment: str = "development"
+    api_base_url: str = "http://127.0.0.1:8000"
 
     # Telegram bot configuration
     telegram_bot_token: str | None = None
-    telegram_admin_ids: list[int] = []
+    telegram_admin_ids: list[int] | str = []
 
     model_config = SettingsConfigDict(
         env_file=".env",

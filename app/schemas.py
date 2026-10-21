@@ -1,6 +1,7 @@
 import datetime
-from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from decimal import Decimal
+from typing import Annotated, Optional
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator
 
 
 def _validate_non_empty_str(field_name: str, value: Optional[str]) -> Optional[str]:
@@ -12,13 +13,28 @@ def _validate_non_empty_str(field_name: str, value: Optional[str]) -> Optional[s
     return value
 
 
+def _serialize_decimal(v: Decimal) -> float:
+    return float(v)
+
+
+MoneyDecimal = Annotated[
+    Decimal,
+    PlainSerializer(_serialize_decimal, return_type=float, when_used="json-unless-none"),
+]
+
+
 # --- Student Schemas ---
 
 class StudentBase(BaseModel):
     name: str = Field(..., description="Full name of the student")
     phone: str = Field(..., description="Contact phone number")
     group_name: str = Field(..., description="Enrolled group name")
-    monthly_fee: float = Field(..., gt=0, description="Monthly tuition fee (must be positive)")
+    monthly_fee: MoneyDecimal = Field(
+        ...,
+        gt=0,
+        decimal_places=2,
+        description="Monthly tuition fee (must be positive exact monetary value)",
+    )
 
     @field_validator("name")
     @classmethod
@@ -44,7 +60,12 @@ class StudentUpdate(BaseModel):
     name: Optional[str] = Field(None, description="Full name of the student")
     phone: Optional[str] = Field(None, description="Contact phone number")
     group_name: Optional[str] = Field(None, description="Enrolled group name")
-    monthly_fee: Optional[float] = Field(None, gt=0, description="Monthly tuition fee (must be positive)")
+    monthly_fee: Optional[MoneyDecimal] = Field(
+        None,
+        gt=0,
+        decimal_places=2,
+        description="Monthly tuition fee (must be positive exact monetary value)",
+    )
 
     @field_validator("name")
     @classmethod
@@ -74,14 +95,19 @@ class StudentResponse(StudentBase):
 
 class PaymentCreate(BaseModel):
     student_id: int = Field(..., gt=0, description="ID of the student")
-    amount: float = Field(..., gt=0, description="Payment amount (must be positive)")
+    amount: MoneyDecimal = Field(
+        ...,
+        gt=0,
+        decimal_places=2,
+        description="Payment amount (must be positive exact monetary value)",
+    )
     payment_date: datetime.date = Field(..., description="Date of the payment (YYYY-MM-DD)")
 
 
 class PaymentResponse(BaseModel):
     id: int
     student_id: int
-    amount: float
+    amount: MoneyDecimal
     payment_date: datetime.date
     created_at: datetime.datetime
 
@@ -95,9 +121,9 @@ class DebtorItem(BaseModel):
     name: str
     phone: str
     group_name: str
-    monthly_fee: float
-    total_paid: float
-    debt: float
+    monthly_fee: MoneyDecimal
+    total_paid: MoneyDecimal
+    debt: MoneyDecimal
 
     model_config = ConfigDict(from_attributes=True)
 

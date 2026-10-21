@@ -1,8 +1,9 @@
 import datetime
+from decimal import Decimal
 from sqlalchemy import (
     Integer,
     String,
-    Float,
+    Numeric,
     Date,
     DateTime,
     ForeignKey,
@@ -19,7 +20,7 @@ class Student(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(50), nullable=False)
     group_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    monthly_fee: Mapped[float] = mapped_column(Float, nullable=False)
+    monthly_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2, asdecimal=True), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -54,7 +55,7 @@ class Payment(Base):
         nullable=False,
         index=True,
     )
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2, asdecimal=True), nullable=False)
     payment_date: Mapped[datetime.date] = mapped_column(Date, nullable=False, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),

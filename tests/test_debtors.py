@@ -207,7 +207,7 @@ def test_handle_month_with_no_payments(client):
 
 
 def test_reject_invalid_month_formats(client):
-    """Test 15: Rejecting invalid month formats."""
+    """Test 15: Rejecting invalid month formats with HTTP 422 Unprocessable Entity."""
     invalid_formats = [
         "2026-13",    # Invalid month 13
         "2026-00",    # Invalid month 00
@@ -221,5 +221,5 @@ def test_reject_invalid_month_formats(client):
 
     for inv in invalid_formats:
         res = client.get(f"/debtors?month={inv}")
-        assert res.status_code == 400, f"Expected 400 for '{inv}', got {res.status_code}"
+        assert res.status_code == 422, f"Expected 422 for '{inv}', got {res.status_code}"
         assert "Invalid month format" in res.json()["detail"]

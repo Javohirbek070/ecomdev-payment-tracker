@@ -1,30 +1,44 @@
 # Learning Center Payment Tracker
 
-A production-minded mini-system for learning centers to manage students, record tuition payments, track monthly debtors, and automate notifications via an administrative Telegram bot. Built with FastAPI, SQLite, SQLAlchemy 2.x, Pydantic v2, and aiogram 3.x.
+A production-grade, architectural technical assessment solution for tracking students, monthly tuition payments, and debtors at an educational center. Featuring a FastAPI REST API, persistent SQLite storage with SQLAlchemy 2.x ORM, exact monetary representation with Python's `Decimal`, strict Pydantic v2 validation, an administrative Telegram bot built on `aiogram 3.x` using `HTTPX`, and an isolated automated test suite with `pytest`.
 
 ---
 
 ## 1. Project Overview & Features
 
 ### Core Capabilities
-- **Student Management**: Full CRUD operations for student records with input validation (name, phone, group, positive monthly fee, and timestamps).
-- **Payment Recording**: Ledger for tracking student tuition payments tied to specific payment dates.
-- **Accounting-Safe Deletion Policy**: Prevents accidental deletion of students with existing payment history to maintain audit trail and ledger integrity.
-- **Monthly Debtors Calculation**: Aggregates all student payments for any given calendar month (`YYYY-MM`), comparing total paid against the student's current monthly tuition fee, identifying partial payers and non-payers, while excluding fully-paid and overpaid students.
-- **Telegram Bot Integration**: Administrative bot built with `aiogram 3.x` allowing authorized staff to query monthly debtors and record tuition payments directly from Telegram with instant validation and secure RBAC (Role-Based Access Control).
-- **Comprehensive Automated Test Suite**: 100% test coverage across all critical business rules using an isolated in-memory SQLite database.
+- **Student Management (REST API)**: Full CRUD operations (`POST`, `GET`, `GET /{id}`, `PATCH /{id}`, `DELETE /{id}`) with strict validation (non-empty strings, whitespace stripping, positive monetary tuition fees, and automatic timestamps).
+- **Accounting Deletion Policy**: Proactively blocks deleting students with existing payment history (HTTP 400 Bad Request) to preserve accounting integrity, auditability, and historical records.
+- **Payment Processing**: Record tuition payments linked by foreign key (`student_id`), ensuring student existence, positive monetary amounts, valid payment dates, and referential integrity (`PRAGMA foreign_keys=ON`).
+- **Exact Decimal Arithmetic**: Uses Python's `Decimal` and SQLAlchemy `Numeric(12, 2)` throughout business logic, database models, and validation schemas, completely eliminating binary floating-point rounding errors in monetary calculations.
+- **Monthly Debtors Calculation**: `GET /debtors?month=YYYY-MM` dynamically calculates debtor status for any calendar month:
+  - Exact calendar boundaries computed via `calendar.monthrange`.
+  - Database aggregation (`outerjoin` with `func.sum`) grouping payments within the target month.
+  - Compares aggregated payments against the student's current monthly fee: `debt = monthly_fee - total_paid`.
+  - Excludes students who paid in full (`total_paid == monthly_fee`) or overpaid (`total_paid > monthly_fee`).
+  - Includes non-paying students with `total_paid: 0.00` and `debt: monthly_fee`.
+  - Rejects invalid month strings with **HTTP 422 Unprocessable Content**.
+- **Telegram Bot (`aiogram 3.x` + `HTTPX`)**: Decoupled administrative bot communicating with the running FastAPI service over HTTP:
+  - `/start`: Welcome guide and command instructions.
+  - `/debt`: Summarizes debtors for the current calendar month with remaining debts.
+  - `/pay <student_id> <amount>`: Records a tuition payment dated today (`date.today()`) via the REST API.
+  - **Role-Based Access Control (RBAC)**: Restricts financial commands (`/pay`) to whitelisted Telegram user IDs (`TELEGRAM_ADMIN_IDS`).
+  - Safe error handling without leaking traceback traces to chat users.
+- **Health Check**: `GET /health` and `GET /` endpoints for uptime monitoring and deployment health checks.
+- **Automated Testing Suite**: 26 automated unit and integration tests executed against an isolated in-memory SQLite database (`StaticPool`), guaranteeing 0 side effects on production data.
 
 ---
 
 ## 2. Technology Stack
 
-- **Runtime**: Python 3.11+ (Tested on Python 3.12)
-- **API Framework**: [FastAPI](https://fastapi.tiangolo.com/) (0.110+)
-- **ASGI Server**: [Uvicorn](https://www.uvicorn.org/) (0.28+)
-- **ORM & Database**: [SQLAlchemy 2.x](https://www.sqlalchemy.org/) with [SQLite](https://sqlite.org/) (Foreign key enforcement enabled)
-- **Data Validation & Settings**: [Pydantic v2](https://docs.pydantic.dev/) & [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
-- **Telegram Bot Framework**: [aiogram 3.x](https://docs.aiogram.dev/)
-- **Testing**: [pytest](https://docs.pytest.org/), [pytest-asyncio](https://pytest-asyncio.readthedocs.io/), and FastAPI `TestClient` (`httpx`)
+- **Python**: 3.11+ (Developed & tested on Python 3.12.0)
+- **Web Framework**: [FastAPI](https://fastapi.tiangolo.com/) (0.158+)
+- **ASGI Server**: [Uvicorn](https://www.uvicorn.org/) (0.54+)
+- **Database & ORM**: SQLite with [SQLAlchemy 2.x](https://www.sqlalchemy.org/) (2.1+)
+- **Data Validation**: [Pydantic v2](https://docs.pydantic.dev/) (2.13+) & [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+- **Telegram Bot**: [aiogram 3.x](https://docs.aiogram.dev/) (3.31+)
+- **HTTP Client**: [HTTPX](https://www.python-httpx.org/) (0.28+)
+- **Testing**: [pytest](https://docs.pytest.org/) (8.4+) & [pytest-asyncio](https://pytest-asyncio.readthedocs.io/)
 - **Configuration**: [python-dotenv](https://github.com/theskumar/python-dotenv)
 
 ---
@@ -38,31 +52,33 @@ ecomdev-payment-tracker/
 │   ├── config.py             # Pydantic Settings configuration loader (.env)
 │   ├── database.py           # Engine, SessionLocal, FK pragma, and Base
 │   ├── models.py             # SQLAlchemy 2.0 ORM models (Student, Payment)
-│   ├── schemas.py            # Pydantic v2 validation schemas
+│   ├── schemas.py            # Pydantic v2 validation schemas with MoneyDecimal
 │   ├── crud.py               # Data access layer and deletion policy
-│   ├── exceptions.py         # Domain and application-level exceptions
+│   ├── exceptions.py         # Custom application exceptions
 │   ├── services/
 │   │   ├── __init__.py
-│   │   └── debtors.py        # Monthly debt aggregation business logic
+│   │   └── debtors.py        # Monthly debt aggregation service (Decimal)
 │   ├── api/
 │   │   ├── __init__.py
 │   │   ├── students.py       # /students CRUD endpoints
-│   │   ├── payments.py       # /payments and /students/{id}/payments
-│   │   └── debtors.py        # /debtors?month=YYYY-MM endpoint
-│   └── main.py               # FastAPI app factory, lifespan, and routes
+│   │   ├── payments.py       # /payments & /students/{id}/payments endpoints
+│   │   └── debtors.py        # /debtors?month=YYYY-MM endpoint (HTTP 422 validation)
+│   └── main.py               # FastAPI app factory, lifespan, and /health
 ├── bot/
 │   ├── __init__.py
-│   └── main.py               # aiogram 3.x bot dispatcher and handlers
+│   └── main.py               # aiogram 3.x bot dispatcher using HTTPX client
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py           # In-memory test engine, session, and TestClient
 │   ├── test_students.py      # Student CRUD & deletion policy tests
 │   ├── test_payments.py      # Payment creation & retrieval tests
 │   ├── test_debtors.py       # Debt calculation & boundary test suite
-│   └── test_bot.py           # Telegram bot commands & authorization tests
+│   └── test_bot.py           # Telegram bot commands, RBAC, and HTTPX tests
 ├── .env.example              # Environment variables template
-├── .gitignore                # Git ignore rules
+├── .gitignore                # Git ignore rules (strictly excludes .env & *.db)
 ├── requirements.txt          # Python dependencies
+├── vercel.json               # Serverless deployment configuration
+├── main.py                   # Root entrypoint
 └── README.md                 # Complete documentation
 ```
 
@@ -70,8 +86,8 @@ ecomdev-payment-tracker/
 
 ## 4. Prerequisites
 
-- Python 3.11 or newer (verify with `python --version` or `python3 --version`)
-- Git (verify with `git --version`)
+- Python 3.11 or newer (`python --version`)
+- Git (`git --version`)
 
 ---
 
@@ -80,7 +96,7 @@ ecomdev-payment-tracker/
 ### A. Windows 11 (PowerShell)
 
 ```powershell
-# 1. Clone the repository and navigate into the project directory
+# 1. Open PowerShell and navigate to the project directory
 cd c:\Users\Lenovo\Desktop\job
 
 # 2. Create a virtual environment
@@ -88,17 +104,20 @@ python -m venv .venv
 
 # 3. Activate the virtual environment
 .venv\Scripts\Activate.ps1
-# If script execution is restricted, run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+# Note: If script execution is restricted on your machine, run:
+# Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
-# 4. Upgrade pip and install dependencies
-pip install --upgrade pip
+# 4. Install dependencies
 pip install -r requirements.txt
+
+# 5. Configure environment variables
+Copy-Item .env.example .env
 ```
 
 ### B. Linux / macOS (Bash / Zsh)
 
 ```bash
-# 1. Navigate into the project directory
+# 1. Navigate to the project directory
 cd /path/to/project
 
 # 2. Create a virtual environment
@@ -107,100 +126,89 @@ python3 -m venv .venv
 # 3. Activate the virtual environment
 source .venv/bin/activate
 
-# 4. Upgrade pip and install dependencies
-pip install --upgrade pip
+# 4. Install dependencies
 pip install -r requirements.txt
+
+# 5. Configure environment variables
+cp .env.example .env
 ```
 
 ---
 
 ## 6. Environment Configuration
 
-Copy `.env.example` to `.env`:
+Edit the `.env` file created from `.env.example`:
 
-**Windows (PowerShell):**
-```powershell
-Copy-Item .env.example .env
+```env
+# Database configuration
+DATABASE_URL=sqlite:///./learning_center.db
+
+# API Server configuration
+API_HOST=127.0.0.1
+API_PORT=8000
+ENVIRONMENT=development
+
+# Telegram Bot configuration
+API_BASE_URL=http://127.0.0.1:8000
+# Obtain your token from @BotFather on Telegram (e.g. 8744717265:AAHEnHE7d73OOfp1fbT6ChEyMhG_wqo6wU4)
+TELEGRAM_BOT_TOKEN=8744717265:AAHEnHE7d73OOfp1fbT6ChEyMhG_wqo6wU4
+# Comma-separated list of Telegram User IDs authorized to perform financial actions (/pay)
+TELEGRAM_ADMIN_IDS=123456789
 ```
 
-**Linux / macOS:**
-```bash
-cp .env.example .env
-```
-
-### Environment Variables Reference
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `DATABASE_URL` | SQLite database connection string | `sqlite:///./learning_center.db` |
-| `API_HOST` | FastAPI host bind address | `127.0.0.1` |
-| `API_PORT` | FastAPI port | `8000` |
-| `ENVIRONMENT` | Runtime environment (`development`, `production`) | `development` |
-| `TELEGRAM_BOT_TOKEN` | Bot API token from Telegram's `@BotFather` | *(Optional/Empty)* |
-| `TELEGRAM_ADMIN_IDS` | Comma-separated Telegram User IDs authorized for `/pay` | *(Optional/Empty)* |
-
-### How to Configure Telegram Bot
-1. Open Telegram and search for `@BotFather`.
-2. Send `/newbot` and follow the prompts to create your bot name and username.
-3. Copy the HTTP API token provided by BotFather.
-4. Paste the token into your `.env` file: `TELEGRAM_BOT_TOKEN=123456789:ABCdef...`
-5. To get your personal Telegram numeric User ID, open `@userinfobot` or `@raw_data_bot` in Telegram.
-6. Add your User ID to `.env`: `TELEGRAM_ADMIN_IDS=123456789`
+### How to Find Your Telegram User ID
+1. In Telegram, start the bot `@userinfobot` or `@raw_data_bot`.
+2. It will display your numeric User ID (e.g., `123456789`).
+3. Add this ID to `TELEGRAM_ADMIN_IDS` in `.env`.
+4. If an unauthorized user attempts `/pay`, the bot displays an Access Denied message containing their Telegram ID so administrators can easily whitelist them.
 
 ---
 
 ## 7. Database Initialization Behavior
 
-- The application uses **SQLite** with **SQLAlchemy 2.0 ORM**.
-- **Automatic Schema Initialization**: When the FastAPI server or the Telegram bot starts, the lifespan handler executes `init_db()`, which creates all required tables (`students`, `payments`) and indexes automatically if they do not exist.
-- **Foreign Key Constraints**: SQLite by default disables foreign key enforcement. The application registers an engine connect hook that issues `PRAGMA foreign_keys=ON` on every SQLite connection.
-- **Data Persistence**: Data is written to `learning_center.db` (or the path defined in `DATABASE_URL`) and persists across application restarts.
+- **Engine**: SQLite with SQLAlchemy 2.0 ORM.
+- **Automatic Setup**: On startup, FastAPI's `lifespan` handler automatically invokes `init_db()`, creating all tables and indexes.
+- **Integrity**: SQLite foreign key enforcement is explicitly activated on connection via `PRAGMA foreign_keys=ON`.
+- **Persistence**: Data is saved to `learning_center.db` and persists across restarts.
 
 ---
 
 ## 8. How to Run
 
-### Running the REST API
-
-Activate your virtual environment and run Uvicorn:
-
-**Windows (PowerShell):**
+### 1. Start the FastAPI REST API
+In your primary terminal:
 ```powershell
 .venv\Scripts\Activate.ps1
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
-
-**Linux / macOS:**
-```bash
-source .venv/bin/activate
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Interactive API documentation will be available at:
+Interactive documentation:
 - **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - **ReDoc**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+- **Health Endpoint**: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 
-### Running the Telegram Bot
-
-Ensure `TELEGRAM_BOT_TOKEN` is set in `.env`, then execute:
-
-**Windows (PowerShell):**
+### 2. Start the Telegram Bot
+In a second terminal:
 ```powershell
 .venv\Scripts\Activate.ps1
 python -m bot.main
 ```
+The bot connects to the running FastAPI server at `API_BASE_URL` (default `http://127.0.0.1:8000`) using `HTTPX`.
 
-**Linux / macOS:**
-```bash
-source .venv/bin/activate
-python -m bot.main
+### 3. Run Automated Tests
+```powershell
+.venv\Scripts\Activate.ps1
+pytest -v
 ```
-
-> **Note on Safety**: If `TELEGRAM_BOT_TOKEN` is missing or contains placeholder values, the bot will log an informative error and shut down cleanly without crashing other system services.
 
 ---
 
 ## 9. API Reference & Examples
+
+### Health Check
+- `GET /health` or `GET /`
+- Response: `{"status": "healthy", "service": "Learning Center Payment Tracker API", "documentation": "/docs"}`
+
+---
 
 ### Student Management
 
@@ -224,8 +232,8 @@ python -m bot.main
   "phone": "+998901234567",
   "group_name": "Python Beginner",
   "monthly_fee": 500000.0,
-  "created_at": "2026-10-21T18:00:00Z",
-  "updated_at": "2026-10-21T18:00:00Z"
+  "created_at": "2026-10-21T18:00:00",
+  "updated_at": "2026-10-21T18:00:00"
 }
 ```
 
@@ -235,27 +243,22 @@ python -m bot.main
 
 #### 3. Retrieve Student by ID
 - **Endpoint**: `GET /students/{student_id}`
-- **Status Code**: `200 OK` (or `404 Not Found` if not present)
+- **Status Code**: `200 OK` (or `404 Not Found` if nonexistent)
 
-#### 4. Update Student Details
+#### 4. Update Student
 - **Endpoint**: `PATCH /students/{student_id}`
 - **Status Code**: `200 OK`
-- **Request Body**:
-```json
-{
-  "monthly_fee": 550000.0
-}
-```
+- **Request Body**: `{"monthly_fee": 550000.0}`
 
 #### 5. Delete Student (with Accounting Deletion Policy)
 - **Endpoint**: `DELETE /students/{student_id}`
-- **Status Code**: `204 No Content` (if no payments exist)
-- **If Payments Exist**: Returns `400 Bad Request`
+- **If student has payments**: Returns **HTTP 400 Bad Request**:
 ```json
 {
-  "detail": "Cannot delete student with id 1: 2 payment record(s) exist. Deletion is restricted to preserve financial and accounting integrity."
+  "detail": "Cannot delete student with id 1: 1 payment record(s) exist. Deletion is restricted to preserve financial and accounting integrity."
 }
 ```
+- **If student has no payments**: Returns **HTTP 204 No Content**.
 
 ---
 
@@ -279,7 +282,7 @@ python -m bot.main
   "student_id": 1,
   "amount": 300000.0,
   "payment_date": "2026-10-15",
-  "created_at": "2026-10-21T18:05:00Z"
+  "created_at": "2026-10-21T18:05:00"
 }
 ```
 
@@ -312,87 +315,89 @@ python -m bot.main
 }
 ```
 
-#### Debt Calculation Business Rules
-1. **Target Boundary**: Sums all payments where `payment_date >= YYYY-MM-01` and `payment_date <= YYYY-MM-(last_day_of_month)`.
-2. **Current Fee Basis**: As specified, debt is computed against the student's *current* `monthly_fee`: `debt = monthly_fee - total_paid`.
-3. **Exclusion**: Students who have paid in full (`total_paid == monthly_fee`) or overpaid (`total_paid > monthly_fee`) are excluded from the debtors list.
-4. **Zero Payments**: Students who have made 0 payments during the month are reported with `total_paid: 0.0` and `debt: monthly_fee`.
+#### Business Rules
+- **Date Boundaries**: Aggregates all payments whose `payment_date >= YYYY-MM-01` and `payment_date <= YYYY-MM-(last_day_of_month)`.
+- **Current Fee Basis**: Debt is computed against the student's current monthly fee: `debt = monthly_fee - total_paid`.
+- **Exclusion**: Fully paid (`total_paid == monthly_fee`) and overpaid (`total_paid > monthly_fee`) students are excluded.
+- **Zero Payments**: Students who made 0 payments during the month are returned with `total_paid: 0.00` and `debt: monthly_fee`.
+- **Invalid Month Format**: Returns **HTTP 422 Unprocessable Content** for malformed inputs (e.g. `2026-13`, `invalid`, `2026/10`).
 
 ---
 
 ## 10. Telegram Bot Commands
 
-| Command | Arguments | Permissions | Description |
+| Command | Arguments | Permission | Description |
 | :--- | :--- | :--- | :--- |
-| `/start` | None | All Users | Displays welcome message and available command guide. |
-| `/debt` | None | All Users | Lists debtors for the current calendar month with remaining balances. |
-| `/pay` | `<student_id> <amount>` | Authorized Admins Only (`TELEGRAM_ADMIN_IDS`) | Records a tuition payment dated today (`date.today()`) for the student. |
-
-### Example Bot Interactions
-- `/pay 1 200000`
-  - *Response*: `✅ Payment successfully recorded! Payment ID: #1 | Student: Ali Valiyev | Amount: 200,000.00 | Date: 2026-10-21`
-- `/pay 999 150000`
-  - *Response*: `❌ Student not found: No student exists with ID 999.`
-- `/pay 1 -500`
-  - *Response*: `❌ Invalid amount: Must be a positive number greater than 0.`
-- Unauthorized user calling `/pay 1 100000`:
-  - *Response*: `⛔ Access Denied: You are not authorized to perform financial operations.`
+| `/start` | None | Public | Welcome message and command instructions. |
+| `/debt` | None | Public | Queries FastAPI `GET /debtors?month=YYYY-MM` and displays current month debtors. |
+| `/pay` | `<student_id> <amount>` | Admins Only (`TELEGRAM_ADMIN_IDS`) | Records payment via FastAPI `POST /payments` dated today (`date.today()`). |
 
 ---
 
-## 11. Automated Testing
+## 11. Automated Test Results Observed
 
-All 16 required test scenarios, plus Telegram bot tests, are implemented using pytest with an in-memory SQLite database. Tests run in complete isolation and never modify the production database.
+Executed with `pytest -v` against an isolated in-memory SQLite database:
 
-### Running Tests
+```text
+============================= test session starts =============================
+platform win32 -- Python 3.12.0, pytest-8.4.2, pluggy-1.7.0 -- .venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Lenovo\Desktop\job
+plugins: anyio-4.15.1, asyncio-0.26.0
 
-**Windows (PowerShell):**
-```powershell
-.venv\Scripts\Activate.ps1
-pytest -v
+tests/test_bot.py::test_bot_authorization PASSED                         [  3%]
+tests/test_bot.py::test_bot_start_command PASSED                         [  7%]
+tests/test_bot.py::test_bot_pay_unauthorized PASSED                      [ 11%]
+tests/test_bot.py::test_bot_pay_invalid_arguments PASSED                 [ 15%]
+tests/test_bot.py::test_bot_pay_and_debt_with_httpx PASSED               [ 19%]
+tests/test_bot.py::test_bot_handles_network_error PASSED                 [ 23%]
+tests/test_debtors.py::test_debt_after_partial_payment PASSED            [ 26%]
+tests/test_debtors.py::test_exclude_fully_paid_students PASSED           [ 30%]
+tests/test_debtors.py::test_exclude_overpaid_students PASSED             [ 34%]
+tests/test_debtors.py::test_aggregate_multiple_payments_in_one_month PASSED [ 38%]
+tests/test_debtors.py::test_ignore_payments_outside_requested_month PASSED [ 42%]
+tests/test_debtors.py::test_handle_month_with_no_payments PASSED         [ 46%]
+tests/test_debtors.py::test_reject_invalid_month_formats PASSED          [ 50%]
+tests/test_payments.py::test_record_payment_success PASSED               [ 53%]
+tests/test_payments.py::test_reject_payment_for_nonexistent_student PASSED [ 57%]
+tests/test_payments.py::test_reject_invalid_payment_amounts PASSED       [ 61%]
+tests/test_payments.py::test_list_student_payment_history PASSED         [ 65%]
+tests/test_payments.py::test_list_payments_nonexistent_student PASSED    [ 69%]
+tests/test_students.py::test_create_student_success PASSED               [ 73%]
+tests/test_students.py::test_list_and_retrieve_students PASSED           [ 76%]
+tests/test_students.py::test_update_student PASSED                       [ 80%]
+tests/test_students.py::test_handle_nonexistent_student PASSED           [ 84%]
+tests/test_students.py::test_reject_invalid_monthly_fees PASSED          [ 88%]
+tests/test_students.py::test_reject_empty_required_fields PASSED         [ 92%]
+tests/test_students.py::test_delete_student_without_payments PASSED      [ 96%]
+tests/test_students.py::test_delete_student_with_payment_history_blocked PASSED [100%]
+
+======================= 26 passed in 9.42s =======================
 ```
 
-**Linux / macOS:**
-```bash
-source .venv/bin/activate
-pytest -v
-```
+---
 
-### Test Scenarios Covered
-1. `test_create_student_success`: Creating a student successfully.
-2. `test_list_and_retrieve_students`: Listing and retrieving students.
-3. `test_update_student`: Updating student details (PATCH).
-4. `test_handle_nonexistent_student`: 404 responses for nonexistent student IDs.
-5. `test_reject_invalid_monthly_fees`: Rejection of zero or negative tuition fees.
-6. `test_record_payment_success`: Recording a payment successfully.
-7. `test_reject_payment_for_nonexistent_student`: 404 response when recording payment for invalid student.
-8. `test_list_student_payment_history`: Querying payment history for a student.
-9. `test_debt_after_partial_payment`: Calculating debt after a partial payment.
-10. `test_exclude_fully_paid_students`: Excluding students who paid the exact monthly fee.
-11. `test_exclude_overpaid_students`: Excluding students who paid more than the monthly fee.
-12. `test_aggregate_multiple_payments_in_one_month`: Summing multiple payments in the same calendar month.
-13. `test_ignore_payments_outside_requested_month`: Ensuring payments from adjacent months do not bleed into the target month.
-14. `test_handle_month_with_no_payments`: Listing students with `total_paid: 0` when no payments exist.
-15. `test_reject_invalid_month_formats`: Returning 400 for malformed months (e.g. `2026-13`, `invalid`, `2026/10`).
-16. `test_delete_student_with_payment_history_blocked`: Enforcing deletion policy that blocks deleting students with payment history.
-17. Bot tests: `/start`, `/debt`, `/pay` argument validation, RBAC security, and DB integration.
+## 12. Security & Quality Considerations
+
+1. **No Hardcoded Secrets**: Secrets and tokens are loaded strictly via `pydantic-settings` from environment variables or `.env`. `.gitignore` excludes `.env`, `*.db`, and cache files.
+2. **SQL Injection Prevention**: Built entirely with SQLAlchemy ORM and parameterized queries.
+3. **RBAC on Financial Operations**: Telegram bot checks user ID authorization against `TELEGRAM_ADMIN_IDS` before executing payments.
+4. **Resilient Error Suppression**: Database or external network connection failures are logged internally while users receive clear, sanitized error messages without stack traces.
 
 ---
 
-## 12. Known Limitations
+## 13. Known Limitations
 
-1. **Current Monthly Fee Rule**: As dictated by the assessment requirements, debt is calculated against the student's *current* `monthly_fee` rather than historical fee snapshots at the time of past months.
-2. **Single Currency**: Monetary values are stored as floating-point / decimal numbers assuming a uniform currency (e.g., UZS).
-3. **Bot Transport**: The Telegram bot operates via Long Polling (`start_polling`), which is ideal for development and single-instance deployments, but production at scale would use webhooks with reverse proxy SSL termination.
+1. **Current Fee Calculation Rule**: Debt is evaluated against the student's *current* `monthly_fee`, as requested by the assignment specification. Historical fee rate changes will affect retrospective debt calculations.
+2. **Single Currency**: Calculations assume a uniform currency (e.g. UZS). Multi-currency support is omitted to preserve simplicity.
+3. **Telegram Long Polling**: The bot uses long polling (`start_polling`), which is optimal for single-process deployments but should be switched to Webhooks for multi-node deployments.
 
 ---
 
-## 13. Realistic 1-Week Roadmap Improvements
+## 14. Realistic 1-Week Roadmap Improvements
 
-If given one additional week of development time, the following production-grade enhancements would be implemented:
-
-1. **Historical Tuition Fee Snapshotting**: Introduce a `FeeSchedule` or versioned contract model so that changes to a student's monthly fee do not retroactively alter the calculated debt for prior months.
-2. **Automated Telegram Notifications & Webhooks**: Configure a background task runner (e.g., Celery with Redis or APScheduler) to automatically send scheduled debt reminders to debtors via Telegram on the 1st and 15th of every month, and switch the bot to Telegram Webhooks.
-3. **Role-Based Authentication (JWT) & Audit Logs**: Add authentication (OAuth2 with JWT tokens) for API endpoints, distinguishing between read-only staff, cashiers, and administrators, accompanied by an audit log table recording every payment creation and student modification.
-4. **Export & Reporting (CSV/Excel/PDF)**: Provide endpoints to export monthly debtor reports and financial balance sheets to Excel (`.xlsx`) or PDF for the accounting department.
-5. **Soft Deletion & Archive Mode**: Implement an `is_active` / soft-delete flag for students so that graduated or withdrawn students can be deactivated without deleting their financial records.
+1. **Historical Fee Schedule / Versioning**: Create a `StudentFeeRate` table recording `effective_from` dates so changes in tuition fees do not retroactively modify debtor calculations for prior months.
+2. **Automated Telegram Reminders**: Use APScheduler or Celery with Redis to send automated debt reminders to students or administrators on the 1st and 15th of each month.
+3. **JWT Authentication & Audit Logs**: Add OAuth2 with JWT to secure the REST API for multiple frontends (e.g. admin dashboard vs. cashier app) and log every payment creation with user identity.
+4. **Soft Deletion & Student Status**: Add an `is_active` flag so graduated or withdrawn students can be archived without deleting their payment history.
+5. **Excel / PDF Export**: Endpoints to export monthly financial ledger and debtor lists directly to XLSX or PDF.

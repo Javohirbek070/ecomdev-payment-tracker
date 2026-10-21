@@ -1,6 +1,7 @@
 import calendar
 import datetime
 import re
+from decimal import Decimal
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import Session
 from app.models import Student, Payment
@@ -32,7 +33,7 @@ def parse_month_bounds(month_str: str) -> tuple[datetime.date, datetime.date]:
 
 def get_monthly_debtors(db: Session, month_str: str) -> MonthlyDebtorsResponse:
     """
-    Calculate and return debtors for the specified calendar month.
+    Calculate and return debtors for the specified calendar month using exact Decimal arithmetic.
     
     Accounting Rule:
         - Debt is calculated against the student's current monthly fee.
@@ -40,7 +41,7 @@ def get_monthly_debtors(db: Session, month_str: str) -> MonthlyDebtorsResponse:
           (inclusive) of the target month are aggregated.
         - Students whose total paid amount is less than their current monthly fee are included.
         - Students who have paid in full (total_paid >= monthly_fee) or overpaid are excluded.
-        - If a student made no payments in the month, total_paid is 0.0 and debt equals monthly_fee.
+        - If a student made no payments in the month, total_paid is 0.00 and debt equals monthly_fee.
     """
     start_date, end_date = parse_month_bounds(month_str)
 
@@ -50,7 +51,7 @@ def get_monthly_debtors(db: Session, month_str: str) -> MonthlyDebtorsResponse:
     stmt = (
         select(
             Student,
-            func.coalesce(func.sum(Payment.amount), 0.0).label("total_paid"),
+            func.coalesce(func.sum(Payment.amount), 0).label("total_paid"),
         )
         .outerjoin(
             Payment,
@@ -67,13 +68,15 @@ def get_monthly_debtors(db: Session, month_str: str) -> MonthlyDebtorsResponse:
     rows = db.execute(stmt).all()
 
     debtors: list[DebtorItem] = []
+    two_places = Decimal("0.01")
+
     for student, total_paid_raw in rows:
-        total_paid = round(float(total_paid_raw or 0.0), 2)
-        monthly_fee = round(float(student.monthly_fee), 2)
+        total_paid = Decimal(str(total_paid_raw or 0)).quantize(two_places)
+        monthly_fee = Decimal(str(student.monthly_fee)).quantize(two_places)
 
         # Include only students whose total payment is lower than their monthly fee
         if total_paid < monthly_fee:
-            debt = round(monthly_fee - total_paid, 2)
+            debt = (monthly_fee - total_paid).quantize(two_places)
             debtors.append(
                 DebtorItem(
                     student_id=student.id,
@@ -87,3 +90,4 @@ def get_monthly_debtors(db: Session, month_str: str) -> MonthlyDebtorsResponse:
             )
 
     return MonthlyDebtorsResponse(month=month_str, debtors=debtors)
+

@@ -1,9 +1,12 @@
 import datetime
+from decimal import Decimal
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+import httpx
+from unittest.mock import AsyncMock, patch
+
 from bot.main import handle_start, handle_debt, handle_pay, is_user_authorized
-from app.models import Student, Payment
 from app.config import settings
+from app.main import app
 
 
 @pytest.mark.asyncio
@@ -13,14 +16,16 @@ async def test_bot_authorization():
         assert is_user_authorized(12345) is True
         assert is_user_authorized(67890) is True
         assert is_user_authorized(99999) is False
+        assert is_user_authorized(None) is False
 
     with patch.object(settings, "telegram_admin_ids", []):
         assert is_user_authorized(12345) is False
+        assert is_user_authorized(None) is False
 
 
 @pytest.mark.asyncio
 async def test_bot_start_command():
-    """Verify /start command sends welcome message."""
+    """Verify /start command sends welcome message and instructions."""
     mock_message = AsyncMock()
     await handle_start(mock_message)
     mock_message.answer.assert_called_once()
@@ -70,50 +75,77 @@ async def test_bot_pay_invalid_arguments():
 
 
 @pytest.mark.asyncio
-async def test_bot_pay_and_debt_with_db(db_session):
-    """Verify bot /pay and /debt commands interact with database correctly."""
+async def test_bot_pay_and_debt_with_httpx(client):
+    """
+    Verify bot /pay and /debt commands communicate with the FastAPI service
+    over HTTPX and handle responses properly.
+    """
     admin_id = 12345
 
-    # Create student in DB
-    student = Student(
-        name="Bot Test Student",
-        phone="+998901112233",
-        group_name="Python",
-        monthly_fee=500000.0,
+    # Create a student via the test client
+    student_res = client.post(
+        "/students",
+        json={
+            "name": "Bot HTTP Student",
+            "phone": "+998901112233",
+            "group_name": "Python",
+            "monthly_fee": 500000.0,
+        },
     )
-    db_session.add(student)
-    db_session.commit()
-    db_session.refresh(student)
+    assert student_res.status_code == 201
+    student = student_res.json()
 
-    # Patch SessionLocal to return db_session
-    mock_session_maker = MagicMock()
-    mock_session_maker.return_value.__enter__.return_value = db_session
-    mock_session_maker.return_value.__exit__.return_value = None
+    # Use ASGITransport to communicate directly with FastAPI app over HTTP
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as http_client:
 
-    with patch("bot.main.SessionLocal", mock_session_maker), \
-         patch.object(settings, "telegram_admin_ids", [admin_id]):
+        with patch.object(settings, "telegram_admin_ids", [admin_id]), \
+             patch.object(settings, "api_base_url", "http://testserver"):
 
-        # 1. Pay for nonexistent student
-        mock_msg_nonexistent = AsyncMock()
-        mock_msg_nonexistent.from_user.id = admin_id
-        mock_msg_nonexistent.text = "/pay 99999 200000"
-        await handle_pay(mock_msg_nonexistent)
-        assert "Student not found" in mock_msg_nonexistent.answer.call_args[0][0]
+            # 1. Pay for nonexistent student
+            mock_msg_nonexistent = AsyncMock()
+            mock_msg_nonexistent.from_user.id = admin_id
+            mock_msg_nonexistent.text = "/pay 99999 200000"
+            await handle_pay(mock_msg_nonexistent, client=http_client)
+            assert "Student not found" in mock_msg_nonexistent.answer.call_args[0][0]
 
-        # 2. Record successful payment
-        mock_msg_pay = AsyncMock()
-        mock_msg_pay.from_user.id = admin_id
-        mock_msg_pay.text = f"/pay {student.id} 200000"
-        await handle_pay(mock_msg_pay)
-        assert "Payment successfully recorded" in mock_msg_pay.answer.call_args[0][0]
+            # 2. Record successful payment
+            mock_msg_pay = AsyncMock()
+            mock_msg_pay.from_user.id = admin_id
+            mock_msg_pay.text = f"/pay {student['id']} 200000"
+            await handle_pay(mock_msg_pay, client=http_client)
+            assert "Payment successfully recorded" in mock_msg_pay.answer.call_args[0][0]
 
-        # Check DB payment
-        payment = db_session.query(Payment).filter(Payment.student_id == student.id).first()
-        assert payment is not None
-        assert payment.amount == 200000.0
+            # 3. Check /debt command
+            mock_msg_debt = AsyncMock()
+            await handle_debt(mock_msg_debt, client=http_client)
+            assert "Debtors for" in mock_msg_debt.answer.call_args[0][0]
+            assert "Remaining Debt: 300,000.00" in mock_msg_debt.answer.call_args[0][0]
 
-        # 3. Check /debt command
-        mock_msg_debt = AsyncMock()
-        await handle_debt(mock_msg_debt)
-        assert "Debtors for" in mock_msg_debt.answer.call_args[0][0]
-        assert "Remaining Debt: 300,000.00" in mock_msg_debt.answer.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_bot_handles_network_error():
+    """Verify bot safely handles network or server connection failures without stack traces."""
+    admin_id = 12345
+
+    # Mock an HTTP client that raises a connection error
+    mock_client = AsyncMock()
+    mock_client.get.side_effect = httpx.ConnectError("Connection refused")
+    mock_client.post.side_effect = httpx.ConnectError("Connection refused")
+
+    with patch.object(settings, "telegram_admin_ids", [admin_id]), \
+         patch.object(settings, "api_base_url", "http://unavailable-server:9999"):
+
+        # Test /debt failure
+        msg_debt = AsyncMock()
+        await handle_debt(msg_debt, client=mock_client)
+        assert "Failed to communicate with the payment server" in msg_debt.answer.call_args[0][0]
+
+        # Test /pay failure
+        msg_pay = AsyncMock()
+        msg_pay.from_user.id = admin_id
+        msg_pay.text = "/pay 1 100000"
+        await handle_pay(msg_pay, client=mock_client)
+        assert "Failed to communicate with the payment server" in msg_pay.answer.call_args[0][0]
