@@ -11,6 +11,8 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!frontend/dist/
+!frontend/dist/**
 downloads/
 eggs/
 .eggs/
@@ -31,6 +33,10 @@ MANIFEST
 venv/
 ENV/
 env/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
 
 # Environment variables & secrets
 .env

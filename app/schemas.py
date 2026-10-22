@@ -114,6 +114,11 @@ class PaymentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PaymentWithStudentResponse(PaymentResponse):
+    student_name: Optional[str] = None
+    group_name: Optional[str] = None
+
+
 # --- Debtor Schemas ---
 
 class DebtorItem(BaseModel):
@@ -131,3 +136,13 @@ class DebtorItem(BaseModel):
 class MonthlyDebtorsResponse(BaseModel):
     month: str
     debtors: list[DebtorItem]
+
+
+class DashboardSummaryResponse(BaseModel):
+    month: str
+    total_students: int
+    total_expected_tuition: MoneyDecimal
+    total_collected: MoneyDecimal
+    total_debt: MoneyDecimal
+    debtors_count: int
+    recent_payments: list[PaymentWithStudentResponse]

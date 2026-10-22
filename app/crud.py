@@ -76,3 +76,30 @@ def get_student_payments(db: Session, student_id: int) -> list[Payment]:
         .order_by(Payment.payment_date.desc(), Payment.id.desc())
     )
     return list(db.scalars(stmt).all())
+
+
+def get_all_payments(db: Session, skip: int = 0, limit: int = 50) -> list[dict]:
+    stmt = (
+        select(
+            Payment,
+            Student.name.label("student_name"),
+            Student.group_name.label("group_name"),
+        )
+        .join(Student, Payment.student_id == Student.id)
+        .order_by(Payment.payment_date.desc(), Payment.id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    rows = db.execute(stmt).all()
+    results = []
+    for payment, student_name, group_name in rows:
+        results.append({
+            "id": payment.id,
+            "student_id": payment.student_id,
+            "amount": payment.amount,
+            "payment_date": payment.payment_date,
+            "created_at": payment.created_at,
+            "student_name": student_name,
+            "group_name": group_name,
+        })
+    return results
