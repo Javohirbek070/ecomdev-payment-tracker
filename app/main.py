@@ -1,5 +1,6 @@
 import os
 import logging
+import traceback
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -92,10 +93,12 @@ async def telegram_webhook(request: Request):
         data = await request.json()
         update = types.Update.model_validate(data, context={"bot": bot})
         await dp.feed_update(bot, update)
+        return {"ok": True}
     except Exception as e:
         logger.error(f"Error processing Telegram webhook: {e}", exc_info=True)
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
     finally:
-        await bot.session.close()
-
-    return {"ok": True}
+        try:
+            await bot.session.close()
+        except Exception:
+            pass
