@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     @classmethod
     def clean_token(cls, v: str | None) -> str | None:
         if v is not None:
-            v = v.strip().strip('"').strip("'").strip()
+            v = v.strip().lstrip("\ufeff").strip('"').strip("'").strip()
             if not v:
                 return None
         return v

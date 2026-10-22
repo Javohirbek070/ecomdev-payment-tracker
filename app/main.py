@@ -88,7 +88,7 @@ async def telegram_webhook(request: Request):
     if not raw_token:
         return {"ok": False, "error": "Bot token not configured"}
 
-    clean_token = raw_token.strip().strip('"').strip("'").strip()
+    clean_token = raw_token.strip().lstrip("\ufeff").strip('"').strip("'").strip()
     if len(clean_token) < 10 or ":" not in clean_token:
         return {"ok": False, "error": "Invalid bot token configured"}
 
@@ -101,13 +101,7 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
     except Exception as e:
         logger.error(f"Error processing Telegram webhook: {e}", exc_info=True)
-        return {
-            "ok": False,
-            "error": str(e),
-            "token_debug": repr(clean_token),
-            "left_is_digit": clean_token.partition(":")[0].isdigit(),
-            "traceback": traceback.format_exc(),
-        }
+        return {"ok": False, "error": str(e)}
     finally:
         if bot:
             try:
