@@ -101,7 +101,13 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
     except Exception as e:
         logger.error(f"Error processing Telegram webhook: {e}", exc_info=True)
-        return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
+        return {
+            "ok": False,
+            "error": str(e),
+            "token_debug": repr(clean_token),
+            "left_is_digit": clean_token.partition(":")[0].isdigit(),
+            "traceback": traceback.format_exc(),
+        }
     finally:
         if bot:
             try:
