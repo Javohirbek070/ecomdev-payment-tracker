@@ -84,12 +84,17 @@ def root_endpoint(request: Request):
 @app.post("/webhook/telegram", tags=["Telegram Bot"])
 async def telegram_webhook(request: Request):
     """Serverless webhook endpoint to receive and process Telegram updates on Vercel."""
-    token = settings.telegram_bot_token
-    if not token or len(token.strip()) < 10:
+    raw_token = settings.telegram_bot_token
+    if not raw_token:
         return {"ok": False, "error": "Bot token not configured"}
 
-    bot = Bot(token=token)
+    clean_token = raw_token.strip().strip('"').strip("'").strip()
+    if len(clean_token) < 10 or ":" not in clean_token:
+        return {"ok": False, "error": "Invalid bot token configured"}
+
+    bot = None
     try:
+        bot = Bot(token=clean_token)
         data = await request.json()
         update = types.Update.model_validate(data, context={"bot": bot})
         await dp.feed_update(bot, update)
@@ -98,7 +103,8 @@ async def telegram_webhook(request: Request):
         logger.error(f"Error processing Telegram webhook: {e}", exc_info=True)
         return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
     finally:
-        try:
-            await bot.session.close()
-        except Exception:
-            pass
+        if bot:
+            try:
+                await bot.session.close()
+            except Exception:
+                pass

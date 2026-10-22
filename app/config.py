@@ -22,6 +22,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("telegram_bot_token", mode="after")
+    @classmethod
+    def clean_token(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip().strip('"').strip("'").strip()
+            if not v:
+                return None
+        return v
+
     @field_validator("database_url", mode="after")
     @classmethod
     def adjust_for_vercel(cls, v: str) -> str:
