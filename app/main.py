@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from aiogram import Bot, types
 from app.api import students, payments, debtors, dashboard
-from app.database import init_db
+from app.database import init_db, SessionLocal, seed_initial_data_if_empty
 from app.config import settings
 from bot.main import dp
 
@@ -23,6 +23,8 @@ FRONTEND_DIST = os.path.abspath(
 async def lifespan(app: FastAPI):
     # Initialize database tables on startup
     init_db()
+    with SessionLocal() as db:
+        seed_initial_data_if_empty(db)
     yield
 
 
