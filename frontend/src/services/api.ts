@@ -8,7 +8,19 @@ import type {
   DashboardSummary,
 } from '../types';
 
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const getBaseUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    // When running on Vite dev server (typically port 5173), route to local backend
+    if (window.location.port === '5173') {
+      return (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
+    }
+    // When served on production (e.g., Vercel or FastAPI static server), use relative URL (same origin)
+    return '';
+  }
+  return '';
+};
+
+const BASE_URL = getBaseUrl();
 
 class ApiError extends Error {
   status: number;
